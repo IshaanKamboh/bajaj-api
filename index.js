@@ -159,7 +159,7 @@ app.post('/bfhl', async (req, res) => {
 
       try {
         const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-        const prompt = `Answer with ONLY a single word (the factual answer), no punctuation. Question: ${question}`;
+        const prompt = `Answer Question: ${question}`;
         
         const result = await model.generateContent(prompt);
         const response = await result.response;
