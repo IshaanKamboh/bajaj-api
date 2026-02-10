@@ -94,6 +94,48 @@ function sendError(res, status, message) {
   return res.status(status).json({ is_success: false, official_email: OFFICIAL_EMAIL || null, error: message });
 }
 
+// Clean and normalize AI response text into plain, human-readable text
+function cleanAIContent(raw) {
+  if (!raw || typeof raw !== 'string') return '';
+  let s = raw;
+
+  // Remove code fences entirely
+  s = s.replace(/```[\s\S]*?```/g, '');
+
+  // Try to extract and parse any JSON blob inside the response
+  const jsonMatch = s.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    try {
+      const parsed = JSON.parse(jsonMatch[0]);
+      if (typeof parsed === 'string') s = parsed;
+      else if (parsed && typeof parsed.data === 'string') s = parsed.data;
+      else s = JSON.stringify(parsed, null, 2);
+    } catch (e) {
+      // if JSON.parse fails, fall back to using the raw match
+      s = jsonMatch[0];
+    }
+  }
+
+  // Remove email addresses for privacy/noise
+  s = s.replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, '');
+
+  // Strip common Markdown and formatting markers
+  s = s.replace(/\*\*(.*?)\*\*/gs, '$1'); // bold
+  s = s.replace(/__(.*?)__/gs, '$1');
+  s = s.replace(/\*(.*?)\*/gs, '$1'); // italics
+  s = s.replace(/`([^`]+)`/g, '$1'); // inline code
+  s = s.replace(/&quot;/g, '"');
+  s = s.replace(/\\n/g, '\n');
+
+  // Remove leftover escaped characters
+  s = s.replace(/\\+/g, '');
+
+  // Collapse multiple blank lines and trim
+  s = s.replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+
+  return s;
+}
+
 app.get('/health', (req, res) => {
   if (!OFFICIAL_EMAIL) return sendError(res, 500, 'Server not configured: OFFICIAL_EMAIL missing');
   res.json({ is_success: true, official_email: OFFICIAL_EMAIL });
@@ -164,11 +206,13 @@ app.post('/bfhl', async (req, res) => {
         const result = await model.generateContent(prompt);
         const response = await result.response;
         const content = response.text();
-        
+
         if (!content) return sendError(res, 502, 'AI service returned no answer');
         const single = content.trim();
+        const cleaned = cleanAIContent(single);
         console.log(`AI response for "${question}": ${single}`);
-        return res.json({ is_success: true, official_email: OFFICIAL_EMAIL, data: single });
+        console.log('Cleaned AI response:', cleaned);
+        return res.json({ is_success: true, official_email: OFFICIAL_EMAIL, data: cleaned });
       } catch (err) {
         console.error('AI error:', err.message);
         return sendError(res, 502, 'AI service error');
