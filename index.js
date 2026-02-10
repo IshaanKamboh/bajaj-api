@@ -166,7 +166,7 @@ app.post('/bfhl', async (req, res) => {
         const content = response.text();
         
         if (!content) return sendError(res, 502, 'AI service returned no answer');
-        const single = content.trim().split(/\s+/)[0].replace(/["'.,?!;:—-]/g, '');
+        const single = content.trim();
         console.log(`AI response for "${question}": ${single}`);
         return res.json({ is_success: true, official_email: OFFICIAL_EMAIL, data: single });
       } catch (err) {
