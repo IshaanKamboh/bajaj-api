@@ -1,12 +1,14 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const axios = require('axios');
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const OFFICIAL_EMAIL = process.env.OFFICIAL_EMAIL;
-const OPENAI_KEY = process.env.OPENAI_API_KEY;
+const GEMINI_KEY = process.env.GEMINI_API_KEY;
+
+const genAI = GEMINI_KEY ? new GoogleGenerativeAI(GEMINI_KEY) : null;
 
 if (!OFFICIAL_EMAIL) {
   console.error('Missing OFFICIAL_EMAIL in environment. Set OFFICIAL_EMAIL and restart.');
@@ -153,38 +155,22 @@ app.post('/bfhl', async (req, res) => {
     if (key === 'AI') {
       const question = body.AI;
       if (typeof question !== 'string' || question.trim().length === 0) return sendError(res, 400, 'AI must be a non-empty string');
-      if (!OPENAI_KEY) return sendError(res, 503, 'AI service not configured');
-
-      // Call OpenAI Chat Completions to get a single-word answer
-      const promptSystem = 'You are a concise assistant. Answer with a single word (the single-word factual answer) only, no punctuation.';
-      const messages = [
-        { role: 'system', content: promptSystem },
-        { role: 'user', content: question }
-      ];
+      if (!genAI) return sendError(res, 503, 'AI service not configured');
 
       try {
-        const resp = await axios.post('https://api.openai.com/v1/chat/completions', {
-          model: 'gpt-3.5-turbo',
-          messages,
-          max_tokens: 16,
-          temperature: 0.0
-        }, {
-          headers: {
-            Authorization: `Bearer ${OPENAI_KEY}`,
-            'Content-Type': 'application/json'
-          },
-          timeout: 10_000
-        });
-
-        const content = resp.data && resp.data.choices && resp.data.choices[0] && resp.data.choices[0].message && resp.data.choices[0].message.content
-          ? resp.data.choices[0].message.content.trim()
-          : null;
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+        const prompt = `Answer with ONLY a single word (the factual answer), no punctuation. Question: ${question}`;
+        
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+        const content = response.text();
+        
         if (!content) return sendError(res, 502, 'AI service returned no answer');
-        // Return only first token (single word)
-        const single = content.split(/\s+/)[0].replace(/[\"'\\.\\,\\?\\!]/g, '');
+        const single = content.trim().split(/\s+/)[0].replace(/["'.,?!;:—-]/g, '');
+        console.log(`AI response for "${question}": ${single}`);
         return res.json({ is_success: true, official_email: OFFICIAL_EMAIL, data: single });
       } catch (err) {
-        console.error('AI error', err && err.response ? err.response.data : err && err.message ? err.message : err);
+        console.error('AI error:', err.message);
         return sendError(res, 502, 'AI service error');
       }
     }
